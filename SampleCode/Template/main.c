@@ -7,20 +7,40 @@
 
 
 /*_____ D E C L A R A T I O N S ____________________________________________*/
+//#define DATA_BUFF_SIZE_8K
+//#define DATA_BUFF_SIZE_2K
+#define DATA_BUFF_SIZE_512
 
+
+// if data buff size simulate to 2K
+#if defined (DATA_BUFF_SIZE_8K)
+#define DATA_X											(128)
+#define DATA_Y											(64)
+
+// if data buff size simulate to 2K
+#elif defined (DATA_BUFF_SIZE_2K)
 #define DATA_X											(64)
 #define DATA_Y											(32)
+
+// if data buff size simulate to 512
+#elif defined (DATA_BUFF_SIZE_512)
+#define DATA_X											(32)
+#define DATA_Y											(16)
+#endif
+
+#define BUFFER_SIZE                 						(2048)
 
 //M487 EVM SPI FLASH : W25Q32
 #define FLASH_BLOCK_SIZE            						(4*1024*1024)    	/* Flash block size. Depend on the physical flash. */
 
-#define DATA_BLOCK_LEN             						(2*1024*1024)      	/* Test block address on SPI flash , last 512k */
+#define DATA_BLOCK_SIZE             						(2*1024*1024)      	/* Test block address on SPI flash , last 512k */
+#define DATA_BLOCK_LEN             						(DATA_Y*DATA_X)    	/* Test block address on SPI flash , last 512k */
 #define DATA_BLOCK_INDEX             					(0x00)
-#define BUFFER_SIZE                 						(2048)
 
 #define SPI_ERASE_FLASH_BLOCK_SIZE						(64*1024)
 #define IS_4BYTES_ADDR            						(0) 
 
+uint8_t rambuffer[DATA_Y][DATA_X] = {0};
 
 #ifdef __ICCARM__
 #pragma data_alignment=4
@@ -37,17 +57,30 @@ enum
 	_SPIM_ERASE												= 0x03 ,	
 };
 
-uint8_t rambuffer[DATA_Y][DATA_X] = {0};
-
-
 /*_____ D E F I N I T I O N S ______________________________________________*/
 volatile uint32_t BitFlag = 0;
 volatile uint32_t counter_tick = 0;
-
+volatile uint32_t us_counter_tick = 0;
 
 /*_____ M A C R O S ________________________________________________________*/
 
 /*_____ F U N C T I O N S __________________________________________________*/
+
+
+void tick_us_counter(void)
+{
+	us_counter_tick++;
+}
+
+uint32_t get_us_tick(void)
+{
+	return (us_counter_tick);
+}
+
+void set_us_tick(uint32_t t)
+{
+	us_counter_tick = t;
+}
 
 void tick_counter(void)
 {
@@ -160,8 +193,7 @@ void  dump_buffer_hex(uint8_t *pucBuff, int nBytes)
     printf("\n");
 }
 
-
-void SPIM_write_read(uint32_t start_addr , uint32_t target_len , uint8_t* buffer , uint8_t wr)
+void SPIM_write_read(uint32_t target_addr , uint32_t target_len , uint8_t* buffer , uint8_t wr)
 {
     uint32_t i, offset;             /* variables */
 //    uint32_t *pData;
@@ -181,20 +213,20 @@ void SPIM_write_read(uint32_t start_addr , uint32_t target_len , uint8_t* buffer
 			EraseCount = (target_len / SPI_ERASE_FLASH_BLOCK_SIZE) + 1;
 
 			#if (_debug_log_SPIM_ERASE_ == 1)	//debug	
-		    printf("Erase SPI flash block (0x%6x)...\r\n", start_addr);
-			counter = get_tick();				
+		    printf("Erase SPI flash block (0x%6x)...\r\n", target_addr);
+			counter = get_us_tick();				
 			#endif
 
 		    for(i = 0; i < EraseCount; i++) 
 			{
-		        SPIM_EraseBlock(start_addr + (SPI_ERASE_FLASH_BLOCK_SIZE*i), 0, OPCODE_BE_64K, 1, 1);
+		        SPIM_EraseBlock(target_addr + (SPI_ERASE_FLASH_BLOCK_SIZE*i), 0, OPCODE_BE_64K, 1, 1);
 //				#if (_debug_log_SPIM_ERASE_ == 1)	//debug			
 //				printf("addr (ERASE) : 0x%6X : %2d \r\n" , start_addr + (SPI_ERASE_FLASH_BLOCK_SIZE*i) , i );
 //				#endif
 		    }
 
 			#if (_debug_log_SPIM_ERASE_ == 1)	//debug	
-		    printf("done. (%6d bytes: %d ms)\n" , target_len , get_tick() - counter);
+		    printf("done. (%6d bytes: %d us)\n" , target_len , get_us_tick() - counter);
 			#endif
 			
 			break;
@@ -204,20 +236,27 @@ void SPIM_write_read(uint32_t start_addr , uint32_t target_len , uint8_t* buffer
 		     *  Program data to flash block
 		     */
 			#if (_debug_log_SPIM_PROGRAMMING_ == 1)	//debug	     
-		    printf("Program sequential data to flash block (0x%6x)...\r\n", start_addr);
-			counter = get_tick();			
+		    printf("Program sequential data to flash block (0x%6x)...\r\n", target_addr);
+			counter = get_us_tick();			
 			#endif
-		
-		    for (offset = start_addr; offset < target_len; offset += BUFFER_SIZE)
-		    {
-		        SPIM_DMA_Write(offset, IS_4BYTES_ADDR, BUFFER_SIZE, buffer, CMD_NORMAL_PAGE_PROGRAM);
-//				#if (_debug_log_SPIM_PROGRAMMING_ == 1)				
-//				printf("addr (DMA_W) : 0x%6X \r\n" , offset);				
-//				#endif				
-		    }
+
+			if (target_len < BUFFER_SIZE)
+			{
+				SPIM_DMA_Write(offset, IS_4BYTES_ADDR, target_len, buffer, CMD_NORMAL_PAGE_PROGRAM);
+			}
+			else
+			{
+			    for (offset = target_addr; offset < target_len; offset += BUFFER_SIZE)
+			    {
+			        SPIM_DMA_Write(offset, IS_4BYTES_ADDR, BUFFER_SIZE, buffer, CMD_NORMAL_PAGE_PROGRAM);
+//					#if (_debug_log_SPIM_PROGRAMMING_ == 1)				
+//					printf("addr (DMA_W) : 0x%6X \r\n" , offset);				
+//					#endif				
+			    }
+			}
 			
 			#if (_debug_log_SPIM_PROGRAMMING_ == 1)	//debug		
-		    printf("done. (%6d bytes: %d ms)\n" , target_len , get_tick() - counter);
+		    printf("done. (%6d bytes: %d us)\n" , target_len , get_us_tick() - counter);
 			#endif
 			break;
 
@@ -231,18 +270,28 @@ void SPIM_write_read(uint32_t start_addr , uint32_t target_len , uint8_t* buffer
 //		        SPIM_SetQuadEnable(1, 1);
 
 			#if (_debug_log_SPIM_DMA_READ_ == 1)	//debug	
-		    printf("Verify SPI flash block data with DMA read (0x%6x)...\r\n", start_addr);
-			counter = get_tick();				
+		    printf("Verify SPI flash block data with DMA read (0x%6x)...\r\n", target_addr);
+			counter = get_us_tick();				
 			#endif
-		    for (offset = start_addr; offset < target_len; offset += BUFFER_SIZE)
-		    {
-		        SPIM_DMA_Read(offset, IS_4BYTES_ADDR, BUFFER_SIZE, buffer, CMD_DMA_FAST_READ, 1);
-//				#if (_debug_log_SPIM_DMA_READ_ == 1)				
-//				printf("addr (DMA_R) : 0x%6X \r\n" , offset);				
-//				#endif
-		    }
+			
+			if (target_len < BUFFER_SIZE)
+			{
+				SPIM_DMA_Read(offset, IS_4BYTES_ADDR, target_len, buffer, CMD_DMA_FAST_READ, 1);
+			}
+			else
+			{
+			    for (offset = target_addr; offset < target_len; offset += BUFFER_SIZE)
+			    {
+					{
+			        	SPIM_DMA_Read(offset, IS_4BYTES_ADDR, BUFFER_SIZE, buffer, CMD_DMA_FAST_READ, 1);
+					}
+//					#if (_debug_log_SPIM_DMA_READ_ == 1)				
+//					printf("addr (DMA_R) : 0x%6X \r\n" , offset);				
+//					#endif
+			    }
+			}
 			#if (_debug_log_SPIM_DMA_READ_ == 1)	//debug		
-		    printf("done. (%6d bytes: %d ms)\n" , target_len , get_tick() - counter);
+		    printf("done. (%6d bytes: %d us)\n" , target_len , get_us_tick() - counter);
 			#endif
 		
 			break;
@@ -252,8 +301,8 @@ void SPIM_write_read(uint32_t start_addr , uint32_t target_len , uint8_t* buffer
 		     *  Verify flash block data with DMM read
 		     */
 			#if (_debug_log_SPIM_DMM_READ_ == 1)	//debug	     
-		    printf("Verify SPI flash block (0x%6x) data with DMM read...\r\n", start_addr);
-			counter = get_tick();				
+		    printf("Verify SPI flash block (0x%6x) data with DMM read...\r\n", target_addr);
+			counter = get_us_tick();				
 			#endif
 
 //		    if ((u32RdCmd == CMD_DMA_NORMAL_QUAD_READ) || (u32RdCmd == CMD_DMA_FAST_QUAD_READ) ||
@@ -262,15 +311,25 @@ void SPIM_write_read(uint32_t start_addr , uint32_t target_len , uint8_t* buffer
 
 		    SPIM_EnterDirectMapMode(IS_4BYTES_ADDR, CMD_DMA_FAST_READ, 8);
 
-		    for (offset = start_addr; offset < target_len; offset += BUFFER_SIZE)
-		    {
-		        memcpy(buffer, (uint8_t *)(SPIM_DMM_MAP_ADDR+offset), BUFFER_SIZE);
-//				#if (_debug_log_SPIM_DMM_READ_ == 1)				
-//				printf("addr (DMM_R) : 0x%6X \r\n" , offset);				
-//				#endif				
-		    }
+			if (target_len < BUFFER_SIZE)
+			{
+				memcpy(buffer, (uint8_t *)(SPIM_DMM_MAP_ADDR+offset), target_len);
+			}
+			else
+			{
+			    for (offset = target_addr; offset < target_len; offset += BUFFER_SIZE)
+			    {
+					{
+			       	 	memcpy(buffer, (uint8_t *)(SPIM_DMM_MAP_ADDR+offset), BUFFER_SIZE);
+					}	
+//					#if (_debug_log_SPIM_DMM_READ_ == 1)				
+//					printf("addr (DMM_R) : 0x%6X \r\n" , offset);				
+//					#endif				
+			    }
+			}
+
 			#if (_debug_log_SPIM_DMM_READ_ == 1)	//debug		
-		    printf("done. (%6d bytes: %d ms)\n" , target_len , get_tick() - counter);
+		    printf("done. (%6d bytes: %d us)\n" , target_len , get_us_tick() - counter);
 			#endif
 
 		    SPIM_ExitDirectMapMode();
@@ -319,7 +378,7 @@ void data_creation(void)
 		for (x = 0 ; x < DATA_X; x++)
 		{
 			rambuffer[y][x] = y*(0x10) + x;
-			g_buff[x+DATA_X*y] = rambuffer[y][x];				
+//			g_buff[x+DATA_X*y] = rambuffer[y][x];				
 		}
 	}
 
@@ -338,8 +397,8 @@ void data_creation(void)
     printf("\r\n\r\n");
 	#endif
 
-	SPIM_write_read(DATA_BLOCK_INDEX, BUFFER_SIZE, NULL ,  _SPIM_ERASE);	//DATA_BLOCK_LEN , BUFFER_SIZE
-	SPIM_write_read(DATA_BLOCK_INDEX, BUFFER_SIZE, g_buff , _SPIM_WRITE);	//DATA_BLOCK_LEN	
+	SPIM_write_read(DATA_BLOCK_INDEX, DATA_BLOCK_LEN, NULL ,  _SPIM_ERASE);
+	SPIM_write_read(DATA_BLOCK_INDEX, DATA_BLOCK_LEN, (uint8_t*)&rambuffer[0][0] , _SPIM_WRITE);	
 
 
 }
@@ -347,7 +406,7 @@ void data_creation(void)
 void data_verify(void)
 {
     memset(g_buff, 0, BUFFER_SIZE);
-	SPIM_write_read(DATA_BLOCK_INDEX, BUFFER_SIZE, g_buff ,  _SPIM_READ_DMA);	//DATA_BLOCK_LEN	
+	SPIM_write_read(DATA_BLOCK_INDEX, DATA_BLOCK_LEN, g_buff ,  _SPIM_READ_DMA);
 	dump_buffer_hex(g_buff , BUFFER_SIZE);	
 }
 
@@ -381,6 +440,24 @@ void TIMER1_Init(void)
     TIMER_EnableInt(TIMER1);
     NVIC_EnableIRQ(TMR1_IRQn);	
     TIMER_Start(TIMER1);
+}
+
+
+void TMR0_IRQHandler(void)
+{
+    if(TIMER_GetIntFlag(TIMER0) == 1)
+    {
+        TIMER_ClearIntFlag(TIMER0);
+		tick_us_counter();
+    }
+}
+
+void TIMER0_Init(void)
+{
+    TIMER_Open(TIMER0, TIMER_PERIODIC_MODE, 1000000);
+    TIMER_EnableInt(TIMER0);
+    NVIC_EnableIRQ(TMR0_IRQn);	
+    TIMER_Start(TIMER0);
 }
 
 void UARTx_Process(void)
@@ -500,6 +577,9 @@ void SYS_Init(void)
     SYS->GPB_MFPH &= ~(SYS_GPB_MFPH_PB12MFP_Msk | SYS_GPB_MFPH_PB13MFP_Msk);
     SYS->GPB_MFPH |= (SYS_GPB_MFPH_PB12MFP_UART0_RXD | SYS_GPB_MFPH_PB13MFP_UART0_TXD);
 
+    CLK_EnableModuleClock(TMR0_MODULE);
+    CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0SEL_HIRC, 0);
+
     CLK_EnableModuleClock(TMR1_MODULE);
     CLK_SetModuleClock(TMR1_MODULE, CLK_CLKSEL1_TMR1SEL_HIRC, 0);
 
@@ -556,6 +636,7 @@ int main()
 
 	UART0_Init();
 	Custom_Init();	
+	TIMER0_Init();	
 	TIMER1_Init();
 
 	SPIM_Init();
