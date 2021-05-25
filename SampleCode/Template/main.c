@@ -31,10 +31,9 @@
 #define BUFFER_SIZE                 						(2048)
 
 //M487 EVM SPI FLASH : W25Q32
-#define FLASH_BLOCK_SIZE            						(4*1024*1024)    	/* Flash block size. Depend on the physical flash. */
-
-#define DATA_BLOCK_SIZE             						(2*1024*1024)      	/* Test block address on SPI flash , last 512k */
-#define DATA_BLOCK_LEN             						(DATA_Y*DATA_X)    	/* Test block address on SPI flash , last 512k */
+#define FLASH_BLOCK_SIZE            						(4*1024*1024)    		/* Flash block size. Depend on the physical flash. */
+#define DATA_BLOCK_SIZE             						(2*1024*1024)
+#define DATA_BLOCK_LEN             						(DATA_Y*DATA_X)
 #define DATA_BLOCK_INDEX             					(0x00)
 
 #define SPI_ERASE_FLASH_BLOCK_SIZE						(64*1024)
