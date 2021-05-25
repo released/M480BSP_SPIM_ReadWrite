@@ -209,7 +209,18 @@ void SPIM_write_read(uint32_t target_addr , uint32_t target_len , uint8_t* buffe
 		    /*
 		     *  Erase flash page
 		     */
+		    #if 1
+			if ((target_len % SPI_ERASE_FLASH_BLOCK_SIZE) == 0 )
+			{
+				EraseCount = target_len/SPI_ERASE_FLASH_BLOCK_SIZE;
+			}
+			else
+			{
+				EraseCount = (target_len/SPI_ERASE_FLASH_BLOCK_SIZE) + 1;
+			}
+			#else
 			EraseCount = (target_len / SPI_ERASE_FLASH_BLOCK_SIZE) + 1;
+			#endif
 
 			#if (_debug_log_SPIM_ERASE_ == 1)	//debug	
 		    printf("Erase SPI flash block (0x%6x)...\r\n", target_addr);
